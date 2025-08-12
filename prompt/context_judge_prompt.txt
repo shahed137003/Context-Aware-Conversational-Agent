@@ -1,5 +1,5 @@
-Determine if the following user message includes background context or is just a direct question.
-Output "context_provided" or "context_missing".
+You are a classifier. Decide if the following text contains enough background context for a question.
+If it has enough background, respond with "YES".
+If not, respond with "NO".
 
-Message: {input}
-
+Text: {input}

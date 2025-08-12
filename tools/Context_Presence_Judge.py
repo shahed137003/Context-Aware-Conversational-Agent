@@ -1,11 +1,11 @@
 from langchain.tools import Tool
-from langchain.chains import LLMChain
 from langchain.prompts import ChatPromptTemplate
-from langchain.chat_models import ChatOpenAI
+from langchain_huggingface import HuggingFacePipeline
+from transformers import pipeline
 
 def context_presence_function(message: str) -> str:
-    """Check whether the user provided enough context using a prompt."""
-    
+    """Check whether the user provided enough context using a local Hugging Face model."""
+
     # Load the prompt template from file
     with open("prompts/context_judge_prompt.txt", "r") as file:
         template = file.read()
@@ -14,16 +14,23 @@ def context_presence_function(message: str) -> str:
     prompt_template = ChatPromptTemplate.from_template(template)
     prompt_value = prompt_template.invoke({"input": message})
 
-    # Initialize the LLM
-    llm = ChatOpenAI(model="gpt-3.5-turbo")
+    # Create a local Hugging Face pipeline
+    generator = pipeline(
+        model="google/flan-t5-small",  
+        task="text2text-generation",
+        max_new_tokens=50
+    )
 
-    # Invoke the LLM
-    result = llm.invoke(prompt_value.messages)  # Correct way to use messages
+    # Wrap in LangChain's HuggingFacePipeline
+    llm = HuggingFacePipeline(pipeline=generator)
 
-    return result.content
+    # Run the model
+    result = llm.invoke(prompt_value.to_string())  # Send the full prompt as text
+
+    return result
 
 def context_presence_tool():
-    """Builds the LangChain Tool for checking context presence."""
+    """Builds the LangChain Tool for checking context presence (offline)."""
     return Tool.from_function(
         func=context_presence_function,
         name="ContextPresenceJudge",

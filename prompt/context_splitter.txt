@@ -1,0 +1,3 @@
+Classify the following sentence as either 'background' or 'question':
+    {sentence}
+    Answer with exactly one word: background or question.
