@@ -1,48 +1,24 @@
 from langchain.agents import create_react_agent, AgentExecutor
-from tools.Context_Presence_Judge import context_presence_tool
-from tools.Web_Search import web_search_tool
-from langchain.llms.fake import FakeListLLM
-from langchain.prompts import PromptTemplate
-from tools.context_relevance_checker import context_relevance_checker_tool
-from tools.context_splitter import context_splitter_tool
+from langchain.memory import ConversationBufferMemory
+from langchain import hub
+from langchain_huggingface.llms import HuggingFacePipeline
+from transformers import pipeline
 
-
-mock_llm = FakeListLLM(responses=[
-  
-    "Action: context_presence_tool\nAction Input: What is LangChain used for?",  
-    "Final Answer: Context is missing, need to search.",
-    
-
-    "Action: context_relevance_checker_tool\nAction Input: LangChain is an LLM framework",  
-    "Final Answer: Context is relevant.",
-
-   
-    "Action: context_splitter_tool\nAction Input: I recently learned about LangChain. How do I integrate it with OpenAI's API?",  
-    "Final Answer: Background separated from question.",
-
-    
-    "Action: web_search_tool\nAction Input: Latest LangChain features",  
-    "Final Answer: Found relevant LangChain updates."
-])
-
-prompt_template = PromptTemplate(
-    input_variables=["input", "agent_scratchpad", "tool_names", "tools"],
-    template="""
-You are a helpful assistant.
-
-You have access to the following tools:
-{tools}
-
-When given a question, think step-by-step and decide if you should use a tool.  
-Available tool names: {tool_names}
-
-Question: {input}
-
-{agent_scratchpad}
-"""
+# ---- Load Hugging Face Model ----
+# GPT-2 is not chat-tuned, so outputs might not be ideal; 
+# consider 'mistralai/Mistral-7B-Instruct-v0.2' if your hardware allows
+generator = pipeline(
+    task="text-generation",
+    model="gpt2",
+    max_new_tokens=256,
+    temperature=0.7
 )
 
-# Define tools
+hf = HuggingFacePipeline(pipeline=generator)
+
+# ---- Load Prompt ----
+prompt = hub.pull("hwchase17/react")  # Contains the required input variables
+
 tools = [
     web_search_tool(),
     context_presence_tool(),
@@ -50,29 +26,41 @@ tools = [
     context_splitter_tool()
 ]
 
-# Create the agent
-agent = create_react_agent(
-    llm=mock_llm,
-    tools=tools,
-    prompt=prompt_template
+# ---- Memory ----
+memory = ConversationBufferMemory(
+    memory_key="chat_history",
+    return_messages=True
 )
 
-# Create executor
+# ---- Create Agent ----
+agent = create_react_agent(
+    llm=hf,
+    tools=tools,
+    prompt=prompt
+)
+
+# ---- Create Agent Executor ----
 agent_executor = AgentExecutor.from_agent_and_tools(
     agent=agent,
     tools=tools,
-    verbose=True
+    memory=memory,
+    verbose=True,
+    handle_parsing_errors=True
 )
 
-# TEST CASES to hit all tools
-test_inputs = [
-    "What is LangChain used for?",  
-    "LangChain is an LLM framework — is this relevant to my question about AI tools?",  
-    "I recently learned about LangChain. How do I integrate it with OpenAI's API?", 
-    "Latest LangChain features"
-]
+# ---- Initial System Context ----
+memory.chat_memory.add_ai_message(
+    "You are an AI assistant that uses tools to provide helpful answers. "
+    "If you can't answer something, say so clearly."
+)
 
-for i, test in enumerate(test_inputs, 1):
-    print(f"\n=== Running Test {i} ===")
-    result = agent_executor.invoke({"input": test})
-    print("Final Result:", result["output"])
+# ---- Chat Loop ----
+while True:
+    user_input = input("User: ")
+    if user_input.lower() == "exit":
+        print("Goodbye!")
+        break
+    response = agent_executor.invoke({"input": user_input})
+    print("ChatBot:", response.get("output", "No response generated."))
+
+
